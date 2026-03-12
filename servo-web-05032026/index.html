@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Controllo servo motore tramite web server</title>
+    <style>
+        h1, h2 {
+            text-align: center;
+        }
+        button {
+            min-width: 50px;
+            min-height: 40px;
+            margin-bottom: 5px;
+            border-radius: 10px;
+            cursor: pointer;
+        }
+
+        datalist {
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            writing-mode: vertical-lr;
+            width: 300px;
+        }
+        option {
+            padding: 0;
+        }
+        input[type="range"] {
+            width: 300px;
+            margin: 0;
+            cursor: grab;
+        }
+
+        #container {
+            display: flex;
+            justify-content: space-evenly;
+            flex-wrap: wrap;
+        }
+
+        table {
+            counter-reset: rowNumber; 
+        }
+
+        tbody tr {
+            counter-increment: rowNumber;
+        }
+
+        tbody tr td:first-child::before {
+            content: counter(rowNumber) ". ";
+            margin-right: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Controllo Arduino tramite server web</h1>
+    <h2>Ivan Beltrame 5°C 05/03/2026</h3>
+
+    <div id="container">
+        <div>
+            <h3>Controllo servomotore</h2>
+            <button onclick="sendReqServo('0')">0°</button>
+            <button onclick="sendReqServo('30')">30°</button>
+            <button onclick="sendReqServo('60')">60°</button>
+            <button onclick="sendReqServo('90')">90°</button>
+            <button onclick="sendReqServo('120')">120°</button>
+            <button onclick="sendReqServo('150')">150°</button>
+            <button onclick="sendReqServo('180')">180°</button><br>
+
+            <button onclick="sendReqServo((Number(gAngle) + -15).toString())">-15°</button>
+            <button onclick="sendReqServo((Number(gAngle) + 15).toString())">+15°</button>
+            <button onclick="sendReqServo(Math.floor(Math.random() * (180 + 1)))">Casuale</button><br>
+
+            <label for="angleInput">Scegli un angolo:</label><br>
+            <input type="range" id="angleInput" list="markers" min="0" max="180" step="1" value="0">
+            <datalist id="markers">
+                <option value="0" label="0"></option>
+                <option value="30" label="30"></option>
+                <option value="60" label="60"></option>
+                <option value="90" label="90"></option>
+                <option value="120" label="120"></option>
+                <option value="150" label="150"></option>
+                <option value="180" label="180"></option>
+            </datalist>
+
+            <h3>Crea una sequenza</h3>
+            <button onclick="addElementQueue()">+</button>
+            <button onclick="addElementQueue(false)">-</button>
+            <button onclick="startQueue()">Avvia</button>
+            <p id="queueStatusP" style="display: none;"><i>Sequenza in corso...</i></p>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Tempo</th>
+                        <th>Gradi</th>
+                    </tr>
+                </thead>
+                <tbody id="queueContainer">
+                    <tr>
+                        <td><input type="number" placeholder="Aspettare n secondi"></td>
+                        <td><input type="number" placeholder="Impostare a n gradi"></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div>
+            <h3>Angolo: <span id="angleSpan">0</span>°</h3>
+            <svg width="300" height="300" viewbox="25 20 150 150">
+                <rect x="80" y="80" width="40" height="80" rx="3%" fill="#888" />
+                <g id="arm" fill="#b0b7c1">
+                    <rect x="30" y="96" width="70" height="8" rx="3" />
+                    <circle cx="100" cy="100" r="8" />
+                    <g transform="rotate(45 100 100)">
+                        <circle cx="100" cy="100" r="4" fill="gray" />
+                        <rect x="98" y="99" width="4" height="2" rx="3" fill="#b0b7c1" />
+                        <rect x="99" y="98" width="2" height="4" rx="3" fill="#b0b7c1" />
+                    </g>
+                </g>
+            </svg>
+        </div>
+    </div>
+</body>
+<script>
+    const arm = document.getElementById("arm");
+    const slider = document.getElementById("angleInput");
+    const angleSpan = document.getElementById("angleSpan");
+    const queueContainer = document.getElementById("queueContainer");
+    const queueStatusP = document.getElementById("queueStatusP");
+    slider.value = 0;
+    let gAngle = 0;
+    let queueInProgress = false;
+
+    slider.addEventListener("input", () => {
+        arm.setAttribute("transform", `rotate(${slider.value} 100 100)`);
+        angleSpan.innerHTML = slider.value;
+    });
+    slider.addEventListener("change", () => {
+        gAngle = slider.value;
+        sendReqServo();
+    });
+
+    function addElementQueue(addElement = true) {
+        if (addElement) {
+            const newRowElement = document.createElement('tr');
+            const tableData1 = document.createElement('td');
+            const tableData2 = document.createElement('td');
+            const inputAngle = document.createElement('input');
+            const inputTime = document.createElement('input');
+            inputTime.type = 'number';
+            inputTime.placeholder = 'Aspettare n secondi';
+            inputAngle.type = 'number';
+            inputAngle.placeholder = 'Impostare a n gradi';
+            tableData1.append(inputTime);
+            tableData2.append(inputAngle);
+            newRowElement.append(tableData1, tableData2);
+
+            queueContainer.append(newRowElement);
+        } else {
+            if (queueContainer.childElementCount === 1) return;
+            queueContainer.removeChild(queueContainer.lastElementChild);
+        }
+    }
+
+    const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+    async function startQueue() {
+        queueInProgress = true; queueStatusP.style.display = "block";
+        for (const child of queueContainer.children) {
+            let time = child.querySelector('td:nth-of-type(1) input').value;
+            let angle = child.querySelector('td:nth-of-type(2) input').value;
+
+            if (angle.trim() === "" || time.trim() === "") {
+                alert("Campi vuoti o non validi numeri");
+                queueInProgress = false; queueStatusP.style.display = "none"; return;
+            }
+
+            await wait(Number(time) *1000);
+            sendReqServo(Math.round(angle), true)
+        }
+        queueInProgress = false; queueStatusP.style.display = "none"; 
+    }
+
+    function sendReqServo(angle = null, fromQueue = false) {
+        if (queueInProgress && !fromQueue) return;
+        angle = angle ? angle : slider.value; // operatore ternario
+        angle = angle < 0 ? 0 : angle;
+        angle = angle > 180 ? 180 : angle;
+        gAngle = angle;
+        slider.value = angle;
+        angleSpan.innerHTML = slider.value;
+        arm.setAttribute("transform", `rotate(${angle} 100 100)`);
+        fetchReq("setServo?a=", angle);
+    }
+
+    function fetchReq(endpoint, value) {
+        fetch("/api/v1/"+endpoint+value, {method: "GET"})
+        .then(response => {
+            if (response.status !== 200) {
+                console.error("request failed: ", response.status);
+            }
+        })
+        .catch(error => console.error("fetch error: ", error));
+    }
+</script>
+</html>
