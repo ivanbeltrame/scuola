@@ -193,13 +193,14 @@
     }
 
     function fetchReq(endpoint, value) {
-        fetch("/api/v1/"+endpoint+value, {method: "GET"})
-        .then(response => {
-            if (response.status !== 200) {
-                console.error("request failed: ", response.status);
-            }
-        })
-        .catch(error => console.error("fetch error: ", error));
+        // fetch("/api/v1/"+endpoint+value, {method: "GET"})
+        // .then(response => {
+        //     if (response.status !== 200) {
+        //         console.error("request failed: ", response.status);
+        //     }
+        // })
+        // .catch(error => console.error("fetch error: ", error));
+        console.log("/api/v1/"+endpoint+value);
     }
 </script>
 </html>
